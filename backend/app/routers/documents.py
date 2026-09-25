@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
@@ -19,9 +20,11 @@ from ..models import (
     User,
 )
 from ..schemas import AccessGrantRequest, DocumentOut, DocumentVersionOut
-from ..services import duplicates, ingestion
+from ..services import duplicates, ingestion, sheets_store, sheets_sync
 from ..services.storage import read_decrypted
 from ..utils.audit import log as audit_log
+
+logger = logging.getLogger("atlas.documents")
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -167,6 +170,14 @@ async def upload_document(
     # for however long OCR takes.
     background_tasks.add_task(ingestion.process_new_version_in_background, version.id, raw_bytes)
 
+    # Mirrors the file to the Drive folder + this row to the Documents
+    # sheet, same "runs after the response, own DB session" shape as the
+    # extraction task above -- this is what lets the document survive
+    # Render's free-tier restarts (see services/sheets_sync.py). No-op if
+    # ATLAS_SHEETS_WEBAPP_URL isn't configured.
+    if sheets_store.enabled():
+        background_tasks.add_task(sheets_sync.push_document_in_background, doc.id, version.id, raw_bytes)
+
     audit_log(
         db,
         user_id=user.id,
@@ -247,4 +258,9 @@ def archive_document(document_id: str, db: Session = Depends(get_db), user: User
     doc.status = DocumentStatus.ARCHIVED
     db.commit()
     audit_log(db, user_id=user.id, action=AuditAction.DOCUMENT_ARCHIVED.value, document_id=doc.id)
+    if sheets_store.enabled():
+        try:
+            sheets_sync.push_document_status(doc)
+        except Exception:
+            logger.exception("Could not mirror archived status for document %s to Sheets.", doc.id)
     return {"ok": True}
