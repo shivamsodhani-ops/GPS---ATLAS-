@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
@@ -57,4 +58,19 @@ def health():
 # --- serve the built React app (single-process deployment) -----------------
 _frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if _frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
+    app.mount("/assets", StaticFiles(directory=str(_frontend_dist / "assets")), name="frontend-assets")
+
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str, request: Request):
+        # React Router owns client-side routes like /login, /ask, /library --
+        # the server has never heard of those paths. StaticFiles(html=True)
+        # only auto-serves index.html for "/" and real directories, so a
+        # fresh browser navigation or a hard refresh on any other route
+        # (bookmarking /login, sharing a /library link, hitting reload on
+        # /ask) fell straight through to a raw {"detail":"Not Found"} JSON
+        # 404 instead of the app -- this catch-all is what index.html itself
+        # needs so client-side routing can take over from there.
+        candidate = _frontend_dist / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_frontend_dist / "index.html")
