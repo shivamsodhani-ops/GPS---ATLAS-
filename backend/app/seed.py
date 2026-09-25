@@ -10,7 +10,7 @@ from .config import settings
 from .database import SessionLocal
 from .models import Department, Document, DocumentVersion, Role, User
 from .security import hash_password
-from .services import ingestion
+from .services import ingestion, sheets_store, sheets_sync
 
 logger = logging.getLogger("atlas.seed")
 
@@ -92,13 +92,20 @@ def run_seed() -> None:
     try:
         dept_by_code: dict[str, Department] = {}
         for name, code in DEFAULT_DEPARTMENTS:
-            existing = db.query(Department).filter(Department.code == code).first()
+            existing = db.get(Department, code)
             if not existing:
-                existing = Department(name=name, code=code)
+                existing = Department(id=code, name=name, code=code)
                 db.add(existing)
                 db.flush()
             dept_by_code[code] = existing
         db.commit()
+
+        if sheets_store.enabled():
+            try:
+                sheets_sync.restore_departments(db)
+                sheets_sync.restore_users(db)
+            except Exception:  # noqa: BLE001 -- Sheets being down must never block startup
+                logger.exception("Sheets restore (departments/users) failed; continuing with local-only data.")
 
         admin = db.query(User).filter(User.email == settings.seed_admin_email.lower()).first()
         if not admin:
@@ -116,11 +123,23 @@ def run_seed() -> None:
                 "Seeded default admin account %s -- CHANGE THIS PASSWORD IMMEDIATELY after first login.",
                 settings.seed_admin_email,
             )
+            if sheets_store.enabled():
+                try:
+                    sheets_sync.push_user(admin)
+                except Exception:
+                    logger.exception("Could not mirror the default admin account to Sheets.")
 
         if not settings.seed_demo_data:
             return
+
+        if sheets_store.enabled():
+            try:
+                sheets_sync.restore_documents(db)
+            except Exception:  # noqa: BLE001 -- Sheets being down must never block startup
+                logger.exception("Sheets restore (documents) failed; continuing with local-only data.")
+
         if db.query(Document).count() > 0:
-            return  # demo data already populated (or real data has been uploaded)
+            return  # real data restored from Sheets, or demo data already populated
 
         for title, doc_type, dept_code, allowed_role, text in DEMO_DOCS:
             dept = dept_by_code[dept_code]
