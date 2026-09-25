@@ -8,7 +8,7 @@ from ..deps import get_client_ip, get_current_user
 from ..models import AuditAction, User
 from ..schemas import AskRequest, AskResponse, Citation, SearchHit, SearchResponse
 from ..services import llm
-from ..services.retrieval import retrieve
+from ..services.retrieval import retrieve, unindexed_documents
 from ..utils.audit import log as audit_log
 
 router = APIRouter(prefix="/api", tags=["search"])
@@ -59,6 +59,31 @@ def ask(payload: AskRequest, request: Request, db: Session = Depends(get_db), us
     )
 
     result = llm.synthesize(payload.question, chunks)
+
+    # retrieve() only ever scores chunks that already have an embedding, so a
+    # document that's still being processed, or one whose extraction failed
+    # outright, contributes nothing -- silently. If *other* documents in the
+    # library still have usable chunks (the seeded demo docs, say),
+    # retrieve() happily answers from those instead, so the response above
+    # can look complete while quietly never having read the one file the
+    # question was actually about. Surface that explicitly rather than
+    # leaving it looking like the AI ignored the upload.
+    pending_titles, failed_titles = unindexed_documents(db, user)
+    notes = []
+    if pending_titles:
+        names = ", ".join(f'"{t}"' for t in pending_titles[:5])
+        notes.append(
+            f"Still processing {names} -- this can take a few seconds (longer for scanned/image-heavy "
+            "files) and isn't reflected in the answer above yet. Try asking again in a moment."
+        )
+    if failed_titles:
+        names = ", ".join(f'"{t}"' for t in failed_titles[:5])
+        notes.append(
+            f"Could not extract readable text from {names} -- it exists in the library but isn't "
+            "searchable. Open it in the Library to check the file isn't corrupted or a blank scan."
+        )
+    if notes:
+        result.answer = result.answer + "\n\n" + "\n".join(notes)
 
     audit_log(
         db,
