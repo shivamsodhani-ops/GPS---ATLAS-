@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,9 +11,20 @@ from ..deps import require_admin, require_manager_or_admin
 from ..models import AuditAction, User
 from ..schemas import UserCreate, UserOut, UserUpdate
 from ..security import hash_password
+from ..services import sheets_store, sheets_sync
 from ..utils.audit import log as audit_log
 
+logger = logging.getLogger("atlas.users")
+
 router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+def _sync_user(user: User) -> None:
+    if sheets_store.enabled():
+        try:
+            sheets_sync.push_user(user)
+        except Exception:
+            logger.exception("Could not mirror user %s to Sheets.", user.id)
 
 
 def _out(u: User) -> UserOut:
@@ -64,6 +77,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User 
         raise HTTPException(status.HTTP_409_CONFLICT, "A user with that email already exists")
     db.refresh(user)
     audit_log(db, user_id=admin.id, action=AuditAction.USER_CREATED.value, detail={"created_user_id": user.id, "email": user.email})
+    _sync_user(user)
     return _out(user)
 
 
@@ -82,4 +96,5 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     db.refresh(user)
     action = AuditAction.USER_DEACTIVATED.value if data.get("is_active") is False else AuditAction.USER_UPDATED.value
     audit_log(db, user_id=admin.id, action=action, detail={"target_user_id": user.id, "changes": data})
+    _sync_user(user)
     return _out(user)
