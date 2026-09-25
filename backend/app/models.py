@@ -139,6 +139,13 @@ class DocumentVersion(Base):
     near_duplicate_of_version_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     near_duplicate_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Set once this version's raw bytes have been mirrored to the Drive
+    # folder (see services/sheets_sync.py). Lets the app rebuild this row
+    # from Sheets+Drive after a restart wipes local disk, and lets a later
+    # metadata-only update (e.g. archiving) re-push the full Sheets row
+    # without needing to re-read the file first.
+    drive_file_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
     uploaded_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
