@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -90,6 +90,7 @@ def list_versions(document_id: str, db: Session = Depends(get_db), user: User = 
 @router.post("", response_model=DocumentOut)
 async def upload_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     doc_type: str = Form(...),
@@ -159,7 +160,12 @@ async def upload_document(
     db.refresh(version)
     db.refresh(doc)
 
-    ingestion.process_new_version(db, doc, version, raw_bytes)
+    # Extraction/OCR/embedding runs after the response goes out -- see
+    # process_new_version_in_background's docstring. The version starts
+    # "pending" (its model default) and the UI shows that until this flips
+    # it to ok/failed/empty, instead of the upload request itself blocking
+    # for however long OCR takes.
+    background_tasks.add_task(ingestion.process_new_version_in_background, version.id, raw_bytes)
 
     audit_log(
         db,
