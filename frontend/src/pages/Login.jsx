@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Leaf, Lock, ShieldCheck, Search, Loader2 } from "lucide-react";
+import { Leaf, Lock, ShieldCheck, Search, Loader2, Info } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiErrorMessage } from "../api/client";
 
@@ -11,6 +11,23 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sessionResetNotice, setSessionResetNotice] = useState("");
+
+  useEffect(() => {
+    // Set by client.js when a request came back 401 outside of a login
+    // attempt -- see the comment there. Read once and clear it so it
+    // doesn't reappear on a manual logout or a later visit.
+    try {
+      if (sessionStorage.getItem("atlas_session_reset")) {
+        setSessionResetNotice(
+          "You were signed out because the server restarted -- on this app's current free hosting tier that also resets the database, so any password change or upload since the last restart didn't survive it either. This isn't something you did wrong."
+        );
+        sessionStorage.removeItem("atlas_session_reset");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -63,6 +80,13 @@ export default function Login() {
           </div>
           <h2 className="text-xl font-bold text-ink-900">Sign in</h2>
           <p className="text-sm text-slate-500 mt-1 mb-6">Use your GPS ATLAS account to continue.</p>
+
+          {sessionResetNotice && (
+            <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm px-3 py-2 flex items-start gap-2">
+              <Info size={15} className="shrink-0 mt-0.5" />
+              <span>{sessionResetNotice}</span>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">
