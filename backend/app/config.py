@@ -81,6 +81,17 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # --- free-tier persistence (Google Sheet + Drive folder) -------------------
+    # Render's free tier wipes local disk (this SQLite DB + the encrypted file
+    # store) on every restart/redeploy. Rather than requiring a paid managed
+    # Postgres instance, GPS ATLAS can optionally mirror lightweight metadata
+    # (departments/users/documents) into a Google Sheet and original file
+    # bytes into a Drive folder, via a small Apps Script Web App -- see
+    # appsscript/Code.gs for the script and setup steps. Leave both unset and
+    # the app behaves exactly as before, local-only.
+    sheets_webapp_url: str | None = None  # the Apps Script /exec URL
+    sheets_secret: str | None = None      # shared secret the Apps Script checks
+
 
 settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)
