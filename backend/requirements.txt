@@ -1,0 +1,44 @@
+# GPS ATLAS backend dependencies.
+# Versions below are floors, not exact pins -- tested against the exact
+# versions shown in the comment beside each (from this build's environment).
+# Everything here is free/open-source; nothing requires a paid API key.
+
+# Core web framework
+fastapi>=0.115          # tested: 0.141.1
+uvicorn[standard]>=0.34  # tested: 0.46.0
+python-multipart>=0.0.20 # tested: 0.0.26
+
+# Data / DB
+sqlalchemy>=2.0          # tested: 2.0.54
+pydantic>=2.9            # tested: 2.13.3
+pydantic-settings>=2.7   # tested: 2.14.0
+email-validator>=2.2     # tested: 2.3.0
+
+# Security
+python-jose[cryptography]>=3.3  # tested: 3.5.0
+bcrypt>=4.2                     # tested: 5.0.0
+cryptography>=44.0              # tested: 46.0.7
+
+# Retrieval (all local / offline-safe -- no external API calls)
+rank_bm25>=0.2.2  # tested: 0.2.2
+numpy>=1.26       # tested: 2.4.4
+
+# Optional neural embedding upgrade -- safe to leave uninstalled. The app
+# automatically falls back to the built-in offline hashing embedder if this
+# package or its model weights aren't present (see app/services/embeddings.py).
+# sentence-transformers>=3.0
+
+# Document parsing (contracts, POs, BOQs, drawings, MOMs, decks, ...)
+pypdf>=5.0             # tested: 3.17.4 also works
+pdfplumber>=0.11       # tested: 0.11.9
+python-docx>=1.1       # tested: 1.2.0
+openpyxl>=3.1          # tested: 3.1.5
+python-pptx>=1.0        # tested: 1.0.2
+pytesseract>=0.3.10     # tested: 0.3.13 -- requires the `tesseract` binary on PATH
+pillow>=10.4            # tested: 12.2.0
+python-dateutil>=2.9    # tested: 2.9.0.post0
+
+# HTTP client for optional hosted/Ollama LLM providers
+httpx>=0.27  # tested: 0.28.1
+
+python-dotenv>=1.0  # tested: 1.2.2
