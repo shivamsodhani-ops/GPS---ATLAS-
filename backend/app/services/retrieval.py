@@ -122,3 +122,40 @@ def retrieve(
             break
 
     return results, total_accessible
+
+
+def unindexed_documents(db: Session, user: User) -> tuple[list[str], list[str]]:
+    """Titles of accessible documents whose current version isn't searchable
+    yet, split into (still_pending, failed_or_empty).
+
+    `retrieve()` above only ever scores chunks that already have an
+    embedding -- a document that's still being OCR'd/indexed, or one whose
+    extraction failed outright, simply contributes nothing, silently. If
+    *other* documents in the library still have usable chunks (the seeded
+    demo docs, say), `retrieve()` happily returns those instead, so asking
+    about the one document that didn't make it in doesn't come back empty --
+    it comes back with an answer built entirely from unrelated documents,
+    which reads as "the AI didn't read my file" without ever saying so.
+    Callers use this to add an explicit note when that's what's happening,
+    rather than leaving it to look like the file was silently ignored.
+    """
+    documents, _ = _candidate_documents(db, user, [], [])
+    if not documents:
+        return [], []
+    version_ids = [d.current_version_id for d in documents if d.current_version_id]
+    if not version_ids:
+        return [], []
+    versions = (
+        db.query(DocumentVersion)
+        .filter(DocumentVersion.id.in_(version_ids), DocumentVersion.extraction_status != "ok")
+        .all()
+    )
+    status_by_version_id = {v.id: v.extraction_status for v in versions}
+    pending, failed = [], []
+    for d in documents:
+        status = status_by_version_id.get(d.current_version_id)
+        if status == "pending":
+            pending.append(d.title)
+        elif status in ("failed", "empty"):
+            failed.append(d.title)
+    return pending, failed
