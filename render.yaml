@@ -1,0 +1,35 @@
+# Render "Blueprint" -- lets Render auto-configure the service from this repo
+# instead of you clicking through every field by hand. In the Render
+# dashboard: New -> Blueprint -> pick this repo -> Apply.
+#
+# Free tier notes (honest, so there are no surprises during judging):
+#  - The container's filesystem is EPHEMERAL on the free plan: the SQLite
+#    database and encrypted file storage reset to the seeded demo data on
+#    every deploy or restart. That's fine for a live demo/judging session.
+#    For anything persistent, upgrade the instance type and attach a Render
+#    "Disk" mounted at /data, then set ATLAS_DATABASE_URL and
+#    ATLAS_DATA_DIR/ATLAS_STORAGE_DIR (see backend/.env.example) to live there.
+#  - Free instances spin down after 15 minutes idle and take ~30-60s to wake
+#    on the next request -- the first click after a quiet period will be slow,
+#    not broken.
+
+services:
+  - type: web
+    name: gps-atlas
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: ATLAS_ENVIRONMENT
+        value: production
+      - key: ATLAS_SECRET_KEY
+        generateValue: true
+      # Optional AI upgrade -- leave unset to run in the built-in, zero-cost
+      # extractive mode. Add one of these later in the Render dashboard
+      # (Environment tab) to upgrade answers to real LLM synthesis; no code
+      # or redeploy changes needed.
+      # - key: ATLAS_OPENAI_API_KEY
+      #   sync: false
+      # - key: ATLAS_ANTHROPIC_API_KEY
+      #   sync: false
