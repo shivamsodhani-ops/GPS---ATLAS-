@@ -13,6 +13,11 @@ sqlalchemy>=2.0          # tested: 2.0.54
 pydantic>=2.9            # tested: 2.13.3
 pydantic-settings>=2.7   # tested: 2.14.0
 email-validator>=2.2     # tested: 2.3.0
+# Postgres driver -- only imported/needed when ATLAS_DATABASE_URL points at a
+# postgresql:// URL (e.g. Render's managed Postgres, used so the DB survives
+# free-tier restarts/redeploys instead of resetting -- see render.yaml).
+# SQLite (the zero-config local/demo default) needs no extra driver.
+psycopg2-binary>=2.9     # tested: 2.9.10
 
 # Security
 python-jose[cryptography]>=3.3  # tested: 3.5.0
