@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -11,7 +12,10 @@ from ..deps import get_client_ip, get_current_user
 from ..models import AuditAction, User
 from ..schemas import ChangePasswordRequest, LoginRequest, TokenResponse, UserOut
 from ..security import create_access_token, hash_password, verify_password
+from ..services import sheets_store, sheets_sync
 from ..utils.audit import log as audit_log
+
+logger = logging.getLogger("atlas.auth")
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -86,4 +90,9 @@ def change_password(payload: ChangePasswordRequest, db: Session = Depends(get_db
     user.hashed_password = hash_password(payload.new_password)
     user.must_change_password = False
     db.commit()
+    if sheets_store.enabled():
+        try:
+            sheets_sync.push_user(user)
+        except Exception:
+            logger.exception("Could not mirror password change for user %s to Sheets.", user.id)
     return {"ok": True}
