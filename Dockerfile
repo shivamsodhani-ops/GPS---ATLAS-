@@ -4,7 +4,7 @@
 # (see backend/app/main.py's StaticFiles mount), so only ONE process/port
 # is needed -- exactly what Render's free web-service tier expects.
 
-FROM node:20-slim AS frontend-build
+FROM node:22-bookworm AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
