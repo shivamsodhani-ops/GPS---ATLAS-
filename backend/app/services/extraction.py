@@ -51,6 +51,20 @@ def extract(filename: str, raw_bytes: bytes, mime_type: str) -> list[PageText]:
         raise ExtractionError(f"Failed to parse .{ext} file: {exc}") from exc
 
 
+# Render's free tier gives this whole app a small fraction of one shared
+# CPU. OCR is by far the most expensive thing it does -- rendering a page to
+# an image and running Tesseract over it can take several seconds of solid
+# CPU time per page. A large scanned PDF run entirely inline (even in a
+# background thread -- Python's GIL means CPU-bound work still competes with
+# the main thread) can starve the process long enough that Render's health
+# check (a 5-second timeout) fails and the instance gets killed and
+# restarted, wiping the in-memory/ephemeral state of everyone's session.
+# Capping both the render resolution and the page count bounds the worst
+# case instead of letting one big scanned upload take the whole app down.
+_OCR_RESOLUTION_DPI = 150
+_OCR_MAX_PAGES = 25
+
+
 def _extract_pdf(raw_bytes: bytes) -> list[PageText]:
     import pdfplumber
 
@@ -59,12 +73,20 @@ def _extract_pdf(raw_bytes: bytes) -> list[PageText]:
         for i, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ""
             if not text.strip():
-                # scanned/image-only page -- fall back to OCR on a rendered image
-                try:
-                    img = page.to_image(resolution=200).original
-                    text = _ocr_image(img)
-                except Exception:
+                if i > _OCR_MAX_PAGES:
+                    # Keep the page (and its citation numbering) but don't
+                    # OCR it -- see the module note above. The document is
+                    # still searchable on every page that had real text or
+                    # was OCR'd; this only skips extra scanned pages past
+                    # the cap.
                     text = ""
+                else:
+                    # scanned/image-only page -- fall back to OCR on a rendered image
+                    try:
+                        img = page.to_image(resolution=_OCR_RESOLUTION_DPI).original
+                        text = _ocr_image(img)
+                    except Exception:
+                        text = ""
             pages.append(PageText(i, text))
     return pages
 
