@@ -1,0 +1,16 @@
+# Never bake local runtime data, secrets, or dev artifacts into the image.
+backend/.venv/
+backend/data/
+backend/storage/
+backend/.env
+backend/__pycache__/
+**/__pycache__/
+**/*.pyc
+
+frontend/node_modules/
+frontend/dist/
+
+.git/
+.gitignore
+*.log
+.DS_Store
