@@ -5,14 +5,18 @@ detect exact/near duplicates -> detect expiry date.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from ..database import SessionLocal
 from ..models import Chunk, Document, DocumentVersion
 from . import duplicates, embeddings as emb, expiry, storage
 from .chunking import chunk_pages
 from .extraction import ExtractionError, extract
+
+logger = logging.getLogger("atlas.ingestion")
 
 
 def sha256_of(raw: bytes) -> str:
@@ -68,6 +72,44 @@ def process_new_version(db: Session, document: Document, version: DocumentVersio
             document.expiry_date = detected
             document.expiry_source = "detected"
             db.commit()
+
+
+def process_new_version_in_background(version_id: str, raw_bytes: bytes) -> None:
+    """Entry point for `BackgroundTasks`: the upload request has already
+    returned a response by the time this runs, so the request-scoped DB
+    session (`Depends(get_db)`) is closed -- we open a fresh one here rather
+    than reusing it.
+
+    This is what keeps document upload fast: the HTTP response comes back as
+    soon as the file is encrypted and stored (near-instant), and the slow
+    part -- text extraction/OCR, embeddings, duplicate + expiry detection --
+    runs after, off the request. The UI shows the version's
+    `extraction_status` ("pending" -> "ok"/"failed"/"empty") so it can poll
+    or refresh instead of the browser sitting on a spinning upload for
+    however long OCR takes.
+    """
+    db = SessionLocal()
+    try:
+        version = db.get(DocumentVersion, version_id)
+        if version is None:
+            logger.error("process_new_version_in_background: version %s vanished before processing", version_id)
+            return
+        document = db.get(Document, version.document_id)
+        if document is None:
+            logger.error("process_new_version_in_background: document for version %s vanished", version_id)
+            return
+        try:
+            process_new_version(db, document, version, raw_bytes)
+        except Exception:  # noqa: BLE001 -- never let a bad file wedge the version at "pending" forever
+            logger.exception("Background processing failed for version %s", version_id)
+            db.rollback()
+            version = db.get(DocumentVersion, version_id)
+            if version is not None:
+                version.extraction_status = "failed"
+                version.extraction_error = "Unexpected error during processing -- see server logs."
+                db.commit()
+    finally:
+        db.close()
 
 
 def store_upload(raw_bytes: bytes, filename: str) -> tuple[str, str]:
