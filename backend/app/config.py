@@ -42,7 +42,11 @@ class Settings(BaseSettings):
     # --- security ------------------------------------------------------------
     secret_key: str = _default_secret()
     file_encryption_key: str | None = None  # base64 Fernet key; auto-generated & persisted if unset
-    access_token_expire_minutes: int = 60 * 8       # 8h shift
+    access_token_expire_minutes: int = 60 * 24 * 7  # 7 days -- there's no refresh-token flow wired up
+                                                     # yet (login is the only way to get a new token),
+                                                     # so a short expiry just means logging in again and
+                                                     # again with nothing to show for it. 7 days keeps a
+                                                     # normal work week from needing a re-login at all.
     refresh_token_expire_minutes: int = 60 * 24 * 7  # 7 days
     bcrypt_rounds: int = 12
     max_login_attempts: int = 5
