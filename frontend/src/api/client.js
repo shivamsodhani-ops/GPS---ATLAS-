@@ -26,5 +26,22 @@ api.interceptors.response.use(
 );
 
 export function apiErrorMessage(err, fallback = "Something went wrong") {
-  return err?.response?.data?.detail || err?.message || fallback;
+  const detail = err?.response?.data?.detail;
+
+  // FastAPI/Pydantic validation errors (HTTP 422) return `detail` as an
+  // array of {loc, msg, type} objects, not a string. Rendering that array
+  // directly as a React child throws ("Objects are not valid as a React
+  // child"), which crashes the whole page instead of showing an error
+  // message -- that's what "page goes blank after clicking Sign in" was.
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail
+      .map((d) => (typeof d === "string" ? d : d?.msg || JSON.stringify(d)))
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") {
+    return detail.msg || JSON.stringify(detail);
+  }
+
+  return err?.message || fallback;
 }
