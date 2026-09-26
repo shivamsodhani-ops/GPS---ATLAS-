@@ -17,18 +17,12 @@ at all (`enabled()` is checked by every function below).
 
 Every function here is best-effort -- a failure (network hiccup, Apps
 Script quota, misconfiguration) is logged and swallowed rather than raised,
-so a Sheets/Drive outage never takes the rest of the app down with it. Each
-call is also retried a few times with a short backoff first: Apps Script's
-own redirect-based response (script.google.com -> script.googleusercontent.com)
-occasionally hits a transient network hiccup from Render's side, and without
-a retry that single blip would otherwise silently drop one row/file for
-good (seen in practice during a restart-recovery restore).
+so a Sheets/Drive outage never takes the rest of the app down with it.
 """
 from __future__ import annotations
 
 import base64
 import logging
-import time
 
 import httpx
 
@@ -38,58 +32,30 @@ logger = logging.getLogger("atlas.sheets_store")
 
 _TIMEOUT_METADATA = 20.0
 _TIMEOUT_FILE = 90.0
-_MAX_ATTEMPTS = 3
-_RETRY_BACKOFF_SECONDS = 2.0
 
 
 def enabled() -> bool:
     return bool(settings.sheets_webapp_url and settings.sheets_secret)
 
 def _get(params: dict, timeout: float) -> dict:
-    last_exc: Exception | None = None
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        try:
-            resp = httpx.get(
-                settings.sheets_webapp_url,
-                params={**params, "token": settings.sheets_secret},
-                timeout=timeout,
-                follow_redirects=True,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as exc:  # noqa: BLE001 -- retry on any transient network/HTTP hiccup
-            last_exc = exc
-            if attempt < _MAX_ATTEMPTS:
-                logger.warning(
-                    "Sheets GET(%s) attempt %d/%d failed (%s), retrying",
-                    params.get("action"), attempt, _MAX_ATTEMPTS, exc,
-                )
-                time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
-    assert last_exc is not None
-    raise last_exc
+    resp = httpx.get(
+        settings.sheets_webapp_url,
+        params={**params, "token": settings.sheets_secret},
+        timeout=timeout,
+        follow_redirects=True,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 def _post(payload: dict, timeout: float) -> dict:
-    last_exc: Exception | None = None
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        try:
-            resp = httpx.post(
-                settings.sheets_webapp_url,
-                json={**payload, "token": settings.sheets_secret},
-                timeout=timeout,
-                follow_redirects=True,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as exc:  # noqa: BLE001 -- retry on any transient network/HTTP hiccup
-            last_exc = exc
-            if attempt < _MAX_ATTEMPTS:
-                logger.warning(
-                    "Sheets POST(%s) attempt %d/%d failed (%s), retrying",
-                    payload.get("action"), attempt, _MAX_ATTEMPTS, exc,
-                )
-                time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
-    assert last_exc is not None
-    raise last_exc
+    resp = httpx.post(
+        settings.sheets_webapp_url,
+        json={**payload, "token": settings.sheets_secret},
+        timeout=timeout,
+        follow_redirects=True,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 def list_rows(sheet: str) -> list[dict]:
     if not enabled():
